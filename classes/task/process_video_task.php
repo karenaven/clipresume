@@ -11,7 +11,7 @@ class process_video_task extends \core\task\scheduled_task {
 
     public function execute() {
         global $DB, $CFG;
-        $credentials_path = $CFG->dirroot.'\clipresume\path_to_google_credentials.json';
+        $credentials_path = $CFG->dirroot.'\local\clipresume\path_to_google_credentials.json';
        
         // Leer credenciales
         $leer_credenciales = function($credentials_path)  {
@@ -38,7 +38,7 @@ class process_video_task extends \core\task\scheduled_task {
 
         $unencryptedPayload = json_encode([
             'iss' => $credentials['client_email'],
-            'scope' => 'https://www.googleapis.com/auth/drive.file',
+            'scope' => 'https://www.googleapis.com/auth/drive',
             'aud' => 'https://www.googleapis.com/oauth2/v4/token',
             'exp' => $expires,
             'iat' => $now
@@ -104,12 +104,10 @@ class process_video_task extends \core\task\scheduled_task {
         // obtener videos y eliminar de Google Drive
         $obtener_y_eliminar_videos_de_drive = function($access_token, $folder_id) {
             mtrace("Iniciando la obtención de todos los videos desde la carpeta de Google Drive...");
-        
+
             // Buscar todos los videos en la carpeta de Google Drive
-            //$query = "'$folder_id' in parents and mimeType contains 'video/'";
-            $query = $folder_id;
-            //$ch = curl_init("https://www.googleapis.com/drive/v3/files?q=" . urlencode($query));
-            $ch = curl_init("https://www.googleapis.com/drive/v3/files?q='$folder_id'+in+parents");
+            $query = "'$folder_id' in parents and mimeType contains 'video/'";
+            $ch = curl_init("https://www.googleapis.com/drive/v3/files?q=" . urlencode($query));
             curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
             curl_setopt($ch, CURLOPT_HTTPHEADER, [
                 "Authorization: Bearer $access_token",
@@ -159,7 +157,8 @@ class process_video_task extends \core\task\scheduled_task {
                 mtrace("Video '$file_name' descargado exitosamente.");
         
                 // Aquí puedes procesar el contenido del video ($video_content) según sea necesario
-        
+
+
                 // Eliminar el video del Drive
                 $ch = curl_init("https://www.googleapis.com/drive/v3/files/$file_id");
                 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
@@ -169,20 +168,46 @@ class process_video_task extends \core\task\scheduled_task {
                 ]);
         
                 $response = curl_exec($ch);
-                if ($response === false) {
-                    mtrace("Error al eliminar el video '$file_name': " . curl_error($ch));
-                    curl_close($ch);
-                    return false;
-                }
-        
+                $http_status = curl_getinfo($ch, CURLINFO_HTTP_CODE); // Obtén el código de estado HTTP
+                $error = curl_error($ch); // Captura cualquier error en cURL
                 curl_close($ch);
-                mtrace("Video '$file_name' eliminado de Google Drive.");
+
+                // Depuración detallada
+                if ($http_status == 204) {
+                    mtrace("Archivo eliminado exitosamente.");
+                } else {
+                    mtrace("Error al intentar eliminar el archivo.\n");
+                    mtrace("Código de estado HTTP: " . $http_status . "\n");
+                    mtrace("Respuesta del servidor: " . $response . "\n");
+                    if ($error) {
+                        mtrace("Error de cURL: " . $error . "\n");
+                    }
+                }
+
+                $ch = curl_init("https://www.googleapis.com/drive/v3/files/$file_id/permissions");
+                curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                curl_setopt($ch, CURLOPT_HTTPHEADER, [
+                    "Authorization: Bearer $access_token",
+                    "Content-Type: application/json"
+                ]);
+
+                $response = curl_exec($ch);
+                curl_close($ch);
+                var_dump($response);
+                // if ($response === false) {
+                //     mtrace("Error al eliminar el video '$file_name': " . curl_error($ch));
+                //     curl_close($ch);
+                //     return false;
+                // }
+        
+                // curl_close($ch);
+                // mtrace("Video '$file_name' eliminado de Google Drive.");
             }
         
             mtrace("Todos los videos han sido procesados y eliminados.");
             return true;
         };
-
+        
         $obtener_y_eliminar_videos_de_drive($access_token, "1cijCe6C10O_q-DwZACtZ-QBfB_9bvNVD");
     }
 }
