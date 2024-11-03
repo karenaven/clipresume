@@ -343,7 +343,7 @@ class process_video_task extends \core\task\scheduled_task
                     $download_url = $file['download_url'];
                     $links['videos'][] = $download_url;
                     mtrace($download_url);
-                } elseif ($file['file_type'] === 'VTT') {
+                } elseif ($file['file_type'] === 'TRANSCRIPT') {
                     $download_url = $file['download_url'];
                     $links['transcripts'][] = $download_url;
                     mtrace($download_url);
@@ -355,56 +355,11 @@ class process_video_task extends \core\task\scheduled_task
 
         $download_links = $getDownloadLinks($recordings);
 
-        // function uploadToDrive($file_url, $access_token, $file_name, $folder_id = null)
-        // {
-        //     mtrace("Subiendo archivo a Google Drive...");
-        //     mtrace("URL: $file_url");
-        //     $file_data = file_get_contents($file_url);
-        //     mtrace($file_data);
-        //     // Obtener el tipo MIME del archivo
-        //     $mimeType = mime_content_type($file_url);
-
-        //     $boundary = uniqid();
-        //     $delimiter = "--" . $boundary;
-        //     $eol = "\r\n";
-
-        //     $metadata = [
-        //         'name' => $file_name,
-        //         'parents' => $folder_id ? [$folder_id] : [],  // Especifica la carpeta destino si se proporciona $folder_id
-        //         'mimeType' => $mimeType
-        //     ];
-
-        //     $body = $delimiter . $eol
-        //         . 'Content-Type: application/json; charset=UTF-8' . $eol . $eol
-        //         . json_encode($metadata) . $eol
-        //         . $delimiter . $eol
-        //         . 'Content-Type: video/mp4' . $eol . $eol
-        //         . $file_url . $eol
-        //         . $delimiter . "--";
-
-        //     $headers = [
-        //         "Authorization: Bearer $access_token",
-        //         "Content-Type: multipart/related; boundary=" . $boundary,
-        //         "Content-Length: " . strlen($body),
-        //     ];
-
-        //     $ch = curl_init("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart");
-        //     curl_setopt($ch, CURLOPT_POST, true);
-        //     curl_setopt($ch, CURLOPT_POSTFIELDS, $body);
-        //     curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
-        //     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-
-        //     $response = curl_exec($ch);
-        //     curl_close($ch);
-
-        //     return json_decode($response, true);
-        // }
-
-        function uploadToDrive($file_url, $zoom_access_token, $drive_access_token, $file_name, $folder_id = null)
+        function uploadToDrive($file_url, $zoom_access_token, $drive_access_token, $file_name, $folder_id = null, $file_type)
         {
             mtrace("Subiendo archivo a Google Drive...");
             mtrace("URL: $file_url");
-        
+
             // Usa cURL para descargar el archivo desde Zoom con autenticación y seguimiento de redirecciones
             $ch = curl_init($file_url);
             curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
@@ -415,65 +370,65 @@ class process_video_task extends \core\task\scheduled_task
             $file_data = curl_exec($ch);
             $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
             curl_close($ch);
-        
+
             if ($http_code !== 200 || $file_data === false) {
                 mtrace("Error al obtener el contenido del archivo. Código de respuesta: $http_code");
                 return null;
             }
-        
+
             $boundary = uniqid();
             $delimiter = "--" . $boundary;
             $eol = "\r\n";
-        
+
             // Metadatos del archivo
             $metadata = [
                 'name' => $file_name,
                 'parents' => $folder_id ? [$folder_id] : [],
             ];
-        
+
             // Construir el cuerpo en formato multipart
             $body = $delimiter . $eol
                 . 'Content-Type: application/json; charset=UTF-8' . $eol . $eol
                 . json_encode($metadata) . $eol
                 . $delimiter . $eol
-                . 'Content-Type: video/mp4' . $eol . $eol
+                . "Content-Type: $file_type" . $eol . $eol
                 . $file_data . $eol
                 . $delimiter . "--";
-        
+
             $headers = [
                 "Authorization: Bearer $drive_access_token",
                 "Content-Type: multipart/related; boundary=" . $boundary,
                 "Content-Length: " . strlen($body),
             ];
-        
+
             $ch = curl_init("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart");
             curl_setopt($ch, CURLOPT_POST, true);
             curl_setopt($ch, CURLOPT_POSTFIELDS, $body);
             curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
             curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        
+
             $response = curl_exec($ch);
             curl_close($ch);
-        
+
             if ($response === false) {
                 mtrace("Error al subir el archivo a Google Drive.");
                 return null;
             }
-        
+
             return json_decode($response, true);
         }
-
 
         $links = $download_links;
 
         foreach ($links['videos'] as $index => $video_url) {
             $file_name = "Video_$index.mp4";
-            uploadToDrive($video_url, $access_token_zoom,$access_token_drive, $file_name, "1cijCe6C10O_q-DwZACtZ-QBfB_9bvNVD");
+            uploadToDrive($video_url, $access_token_zoom, $access_token_drive, $file_name, "1cijCe6C10O_q-DwZACtZ-QBfB_9bvNVD", "video/mp4");
         }
-
+        
         foreach ($links['transcripts'] as $index => $transcript_url) {
+            mtrace("Subiendo Transcipciones a Google Drive...");
             $file_name = "Transcript_$index.vtt";
-            uploadToDrive($transcript_url, $access_token_zoom,$access_token_drive, $file_name, "1cijCe6C10O_q-DwZACtZ-QBfB_9bvNVD");
+            uploadToDrive($transcript_url, $access_token_zoom, $access_token_drive, $file_name, "1cijCe6C10O_q-DwZACtZ-QBfB_9bvNVD", "text/vtt");
         }
     }
 }
