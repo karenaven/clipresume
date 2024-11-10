@@ -1,5 +1,5 @@
 <?php
-namespace local_clipresume\task;
+namespace mod_clipresume\task;
 
 defined('MOODLE_INTERNAL') || die();
 
@@ -8,7 +8,7 @@ class process_video_task extends \core\task\scheduled_task
 
     public function get_name()
     {
-        return get_string('process_video_task', 'local_clipresume');
+        return get_string('process_video_task', 'clipresume');
     }
 
     public function execute()
@@ -22,7 +22,7 @@ class process_video_task extends \core\task\scheduled_task
         // Obtén el archivo JSON desde el área de configuración.
         $fs = get_file_storage();
         $context = \context_system::instance();
-        $files = $fs->get_area_files($context->id, 'local_clipresume', 'credentials_path', 0, 'itemid, filepath, filename', false);
+        $files = $fs->get_area_files($context->id, 'mod_clipresume', 'credentials_path', 0, 'itemid, filepath, filename', false);
 
         // Verifica si el archivo existe.
         if (count($files) > 0) {
@@ -38,12 +38,12 @@ class process_video_task extends \core\task\scheduled_task
             echo "No se encontró el archivo JSON de credenciales.";
         }
 
-        // $credentials_path = get_config('local_clipresume', 'credentials_path');
-        $folder_id = get_config('local_clipresume', 'drive_folder_id');
-        $client_id = get_config('local_clipresume', 'zoom_client_id');
-        $client_secret = get_config('local_clipresume', 'zoom_client_secret');
-        $account_id = get_config('local_clipresume', 'zoom_account_id');
-        $user_id = get_config('local_clipresume', 'zoom_user_id');
+        // $credentials_path = get_config('mod_clipresume', 'credentials_path');
+        $folder_id = get_config('mod_clipresume', 'drive_folder_id');
+        $client_id = get_config('mod_clipresume', 'zoom_client_id');
+        $client_secret = get_config('mod_clipresume', 'zoom_client_secret');
+        $account_id = get_config('mod_clipresume', 'zoom_account_id');
+        $user_id = get_config('mod_clipresume', 'zoom_user_id');
 
         // // Leer credenciales
         // $leer_credenciales = function ($credentials_path) {
@@ -176,7 +176,7 @@ class process_video_task extends \core\task\scheduled_task
             mtrace($client_id . " - " . $client_secret . " - " . $account_id);
             // Cierra cURL
             curl_close($ch);
-            mtrace($response);
+           
             // Procesa la respuesta
             if ($http_code === 200) {
                 $response_data = json_decode($response, true);
@@ -285,125 +285,114 @@ class process_video_task extends \core\task\scheduled_task
 
         $download_links = $getDownloadLinks($recordings);
 
-        // function uploadToDrive($file_url, $zoom_access_token, $drive_access_token, $file_name, $folder_id = null, $file_type)
-        // {
-        //     mtrace("Subiendo archivo a Google Drive...");
-        //     mtrace("URL: $file_url");
+        
+        // $getMeetingIdsFromYesterday = function ($access_token, $user_id) {
+        //     $from = date('Y-m-d', strtotime('yesterday'));
+        //     $to = date('Y-m-d', strtotime('yesterday'));
 
-        //     // Usa cURL para descargar el archivo desde Zoom con autenticación y seguimiento de redirecciones
-        //     $ch = curl_init($file_url);
-        //     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        //     curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);  // Permitir que cURL siga redirecciones
-        //     curl_setopt($ch, CURLOPT_HTTPHEADER, [
-        //         "Authorization: Bearer $zoom_access_token"
-        //     ]);
-        //     $file_data = curl_exec($ch);
-        //     $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        //     curl_close($ch);
+        //     $url = "https://api.zoom.us/v2/users/$user_id/recordings?from=" . urlencode($from) . "&to=" . urlencode($to);
 
-        //     if ($http_code !== 200 || $file_data === false) {
-        //         mtrace("Error al obtener el contenido del archivo. Código de respuesta: $http_code");
-        //         return null;
-        //     }
+        //     mtrace("Obteniendo IDs de reuniones del día anterior...");
 
-        //     // Crear una carpeta con la fecha actual como nombre
-        //     $folder_name = date('Y-m-d');
-        //     $folder_metadata = [
-        //         'name' => $folder_name,
-        //         'mimeType' => 'application/vnd.google-apps.folder',
-        //         'parents' => [$folder_id]
-        //     ];
+        //     $options = array(
+        //         'http' => array(
+        //             'header' => "Authorization: Bearer $access_token\r\n",
+        //             'method' => 'GET',
+        //         ),
+        //     );
+        //     $meeting_ids = [];
+        //     $context = stream_context_create($options);
+        //     $result = file_get_contents($url, false, $context);
 
-        //     $ch = curl_init('https://www.googleapis.com/drive/v3/files');
-        //     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        //     curl_setopt($ch, CURLOPT_POST, true);
-        //     curl_setopt($ch, CURLOPT_HTTPHEADER, [
-        //         "Authorization: Bearer $drive_access_token",
-        //         "Content-Type: application/json"
-        //     ]);
-        //     curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($folder_metadata));
-        //     $folder_response = curl_exec($ch);
-        //     $folder_info = json_decode($folder_response, true);
-        //     curl_close($ch);
-
-        //     if (!isset($folder_info['id'])) {
-        //         mtrace("Error al crear la carpeta en Google Drive");
-        //         return false;
-        //     }
-
-        //     $folder_id = $folder_info['id'];
-
-        //     // Subir el archivo a la nueva carpeta
-        //     $boundary = uniqid();
-        //     $delimiter = "--" . $boundary;
-        //     $eol = "\r\n";
-
-        //     // Metadatos del archivo
-        //     $metadata = [
-        //         'name' => $file_name,
-        //         'parents' => $folder_id ? [$folder_id] : [],
-        //     ];
-
-        //     // Construir el cuerpo en formato multipart
-        //     $body = $delimiter . $eol
-        //         . 'Content-Type: application/json; charset=UTF-8' . $eol . $eol
-        //         . json_encode($metadata) . $eol
-        //         . $delimiter . $eol
-        //         . "Content-Type: $file_type" . $eol . $eol
-        //         . $file_data . $eol
-        //         . $delimiter . "--";
-
-        //     $headers = [
-        //         "Authorization: Bearer $drive_access_token",
-        //         "Content-Type: multipart/related; boundary=" . $boundary,
-        //         "Content-Length: " . strlen($body),
-        //     ];
-
-        //     $ch = curl_init("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart");
-        //     curl_setopt($ch, CURLOPT_POST, true);
-        //     curl_setopt($ch, CURLOPT_POSTFIELDS, $body);
-        //     curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
-        //     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-
-        //     $response = curl_exec($ch);
-        //     curl_close($ch);
-
-        //     if ($response === false) {
-        //         mtrace("Error al subir el archivo a Google Drive.");
-        //         return null;
-        //     }
-
-        //     return json_decode($response, true);
-        // }
-
-        // $links = $download_links;
-
-        // $index_clip = 0;
-        // foreach ($links['videos'] as $index => $video) {
-        //     $download_url = $video['download_url'];
-        //     $file_name = 'Video_$index.mp4';
-        //     if (isset($video['encryption_fingerprint'])) {
-        //         $index_clip++;
-        //         $file_name = 'Clip_' . $index_clip . ' - ' . $video['recording_start'] . '.mp4';
+        //     if ($result === FALSE) {
+        //         mtrace("ERROR " . $result);
         //     } else {
-        //         $index++;
-        //         $file_name = 'Video Completo_' . $index . ' - ' . $video['recording_start'] . '.mp4';
+        //         $meetings = json_decode($result, true);
+
+        //         if (!empty($meetings['meetings'])) {
+        //             foreach ($meetings['meetings'] as $meeting) {
+        //                 $meeting_ids[] = $meeting['id'];
+        //             }
+        //         }
+
+        //         mtrace("Reuniones encontradas: " . json_encode($meeting_ids));
         //     }
-        //     uploadToDrive($download_url, $access_token_zoom, $access_token_drive, $file_name, "1cijCe6C10O_q-DwZACtZ-QBfB_9bvNVD", "video/mp4");
-        // }
 
-        // foreach ($links['transcripts'] as $index => $transcript_url) {
-        //     $index++;
-        //     mtrace("Subiendo Transcipciones a Google Drive...");
-        //     $file_name = "Transcript_$index.vtt";
-        //     uploadToDrive($transcript_url, $access_token_zoom, $access_token_drive, $file_name, "1cijCe6C10O_q-DwZACtZ-QBfB_9bvNVD", "text/vtt");
-        // }
+        //     return $meeting_ids;
+        // };
 
+        // $meeting_ids = $getMeetingIdsFromYesterday($access_token_zoom, $user_id);
 
-        function downloadFile($file_url, $zoom_access_token) {
+        // $getMeetingsByIds = function ($access_token, $meeting_ids) {
+        //     $all_recordings = [];
+
+        //     foreach ($meeting_ids as $meeting_id) {
+        //         $url = "https://api.zoom.us/v2/meetings/$meeting_id/recordings";
+
+        //         $options = array(
+        //             'http' => array(
+        //                 'header' => "Authorization: Bearer $access_token\r\n",
+        //                 'method' => 'GET',
+        //             ),
+        //         );
+
+        //         $context = stream_context_create($options);
+        //         $result = file_get_contents($url, false, $context);
+        //         mtrace("Obteniendo grabaciones para la reunión ID: $meeting_id");
+
+        //         if ($result === FALSE) {
+        //             mtrace('ERROR obteniendo grabaciones para la reunión ID ' . $meeting_id);
+        //             continue;
+        //         }
+
+        //         $recordings = json_decode($result, true);
+        //         if (!empty($recordings)) {
+        //             $all_recordings[$meeting_id] = $recordings;
+        //         }
+        //     }
+
+        //     return $all_recordings;
+        // };
+
+        // $recordings = $getMeetingsByIds($access_token_zoom, $meeting_ids);
+
+        // $getDownloadLinks = function ($all_recordings) {
+        //     $all_links = [
+        //         'videos' => [],
+        //         'transcripts' => [],
+        //     ];
+
+        //     foreach ($all_recordings as $meeting_id => $recordings) {
+        //         mtrace("Procesando grabaciones para la reunión ID: $meeting_id");
+
+        //         foreach ($recordings['recording_files'] as $file) {
+        //             if ($file['file_type'] === 'MP4') {
+        //                 $all_links['videos'][] = [
+        //                     'meeting_id' => $meeting_id,
+        //                     'file' => $file,
+        //                 ];
+        //                 mtrace("Video encontrado para reunión $meeting_id");
+        //             } elseif ($file['file_type'] === 'TRANSCRIPT') {
+        //                 $all_links['transcripts'][] = [
+        //                     'meeting_id' => $meeting_id,
+        //                     'download_url' => $file['download_url'],
+        //                 ];
+        //                 mtrace("Transcripción encontrada para reunión $meeting_id");
+        //             }
+        //         }
+        //     }
+
+        //     mtrace("Enlaces procesados: " . json_encode($all_links));
+        //     return $all_links;
+        // };
+
+        // $download_links = $getDownloadLinks($recordings);
+
+        function downloadFile($file_url, $zoom_access_token)
+        {
             mtrace("Descargando archivo desde Zoom...");
             mtrace("URL: $file_url");
-        
+
             // Usa cURL para descargar el archivo desde Zoom con autenticación
             $ch = curl_init($file_url);
             curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
@@ -414,18 +403,19 @@ class process_video_task extends \core\task\scheduled_task
             $file_data = curl_exec($ch);
             $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
             curl_close($ch);
-        
+
             if ($http_code !== 200 || $file_data === false) {
                 mtrace("Error al obtener el contenido del archivo. Código de respuesta: $http_code");
                 return null;
             }
-        
+
             return $file_data;
         }
-        
-        function createFolder($drive_access_token, $folder_id) {
+
+        function createFolder($drive_access_token, $folder_id)
+        {
             mtrace("Creando carpeta en Google Drive...");
-        
+
             // Crear una carpeta con la fecha actual como nombre
             $folder_name = date('Y-m-d');
             $folder_metadata = [
@@ -433,7 +423,7 @@ class process_video_task extends \core\task\scheduled_task
                 'mimeType' => 'application/vnd.google-apps.folder',
                 'parents' => [$folder_id]
             ];
-        
+
             $ch = curl_init('https://www.googleapis.com/drive/v3/files');
             curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
             curl_setopt($ch, CURLOPT_POST, true);
@@ -445,29 +435,30 @@ class process_video_task extends \core\task\scheduled_task
             $folder_response = curl_exec($ch);
             $folder_info = json_decode($folder_response, true);
             curl_close($ch);
-        
+
             if (!isset($folder_info['id'])) {
                 mtrace("Error al crear la carpeta en Google Drive");
                 return false;
             }
-        
+
             return $folder_info['id']; // Retornar el ID de la nueva carpeta
         }
-        
-        function uploadFileToDrive($file_data, $file_name, $file_type, $drive_access_token, $folder_id) {
+
+        function uploadFileToDrive($file_data, $file_name, $file_type, $drive_access_token, $folder_id)
+        {
             mtrace("Subiendo archivo a Google Drive...");
-        
+
             // Subir el archivo a la nueva carpeta
             $boundary = uniqid();
             $delimiter = "--" . $boundary;
             $eol = "\r\n";
-        
+
             // Metadatos del archivo
             $metadata = [
                 'name' => $file_name,
                 'parents' => $folder_id ? [$folder_id] : [],
             ];
-        
+
             // Construir el cuerpo en formato multipart
             $body = $delimiter . $eol
                 . 'Content-Type: application/json; charset=UTF-8' . $eol . $eol
@@ -476,51 +467,52 @@ class process_video_task extends \core\task\scheduled_task
                 . "Content-Type: $file_type" . $eol . $eol
                 . $file_data . $eol
                 . $delimiter . "--";
-        
+
             $headers = [
                 "Authorization: Bearer $drive_access_token",
                 "Content-Type: multipart/related; boundary=" . $boundary,
                 "Content-Length: " . strlen($body),
             ];
-        
+
             $ch = curl_init("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart");
             curl_setopt($ch, CURLOPT_POST, true);
             curl_setopt($ch, CURLOPT_POSTFIELDS, $body);
             curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
             curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        
+
             $response = curl_exec($ch);
             curl_close($ch);
-        
+
             if ($response === false) {
                 mtrace("Error al subir el archivo a Google Drive.");
                 return null;
             }
-        
+
             return json_decode($response, true);
         }
-        
-        function uploadToDrive($file_url, $zoom_access_token, $drive_access_token, $file_name, $folder_id, $file_type) {
+
+        function uploadToDrive($file_url, $zoom_access_token, $drive_access_token, $file_name, $folder_id, $file_type)
+        {
             // Descargar el archivo desde Zoom
             $file_data = downloadFile($file_url, $zoom_access_token);
             if ($file_data === null) {
                 return null; // Salir si hubo un error en la descarga
             }
-        
+
             // Subir el archivo a la carpeta ya creada
             return uploadFileToDrive($file_data, $file_name, $file_type, $drive_access_token, $folder_id);
         }
-        
+
         // Crear la carpeta una vez antes de subir los archivos
         $folder_id = createFolder($access_token_drive, $folder_id);
         if ($folder_id === false) {
             mtrace("No se pudo crear la carpeta. Terminando.");
             exit; // Salir si hubo un error al crear la carpeta
         }
-        
+
         // Ciclo para subir videos
         $links = $download_links;
-        
+
         $index_clip = 0;
         foreach ($links['videos'] as $index => $video) {
             $download_url = $video['download_url'];
@@ -534,7 +526,7 @@ class process_video_task extends \core\task\scheduled_task
             }
             uploadToDrive($download_url, $access_token_zoom, $access_token_drive, $file_name, $folder_id, "video/mp4");
         }
-        
+
         // Ciclo para subir transcripciones
         foreach ($links['transcripts'] as $index => $transcript_url) {
             $index++;
@@ -542,6 +534,6 @@ class process_video_task extends \core\task\scheduled_task
             $file_name = "Transcript_" . $index . ".vtt";
             uploadToDrive($transcript_url, $access_token_zoom, $access_token_drive, $file_name, $folder_id, "text/vtt");
         }
-        
+
     }
 }
