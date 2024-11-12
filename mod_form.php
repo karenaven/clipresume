@@ -1,29 +1,49 @@
 <?php
-defined('MOODLE_INTERNAL') || die();
+// This file is part of Moodle - http://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+
+/**
+ * Activity creation/editing form for the mod_[modname] plugin.
+ *
+ * @package   mod_[modname]
+ * @copyright Year, You Name <your@email.address>
+ * @license   http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ */
 
 require_once($CFG->dirroot . '/course/moodleform_mod.php');
+require_once($CFG->dirroot . '/mod/clipresume/lib.php');
 
-class mod_clipresume_mod_form extends moodleform_mod {
+class mod_clipresume_mod_form extends moodleform_mod
+{
 
-    /**
-     * Define el formulario de configuración para la actividad clipresume.
-     */
-    public function definition() {
-        global $CFG;
+    function definition()
+    {
+        global $CFG, $DB, $OUTPUT;
 
-        $mform = $this->_form;
+        $mform =& $this->_form;
 
-        // Campo para el nombre de la actividad.
-        $mform->addElement('text', 'name', get_string('name', 'clipresume'), array('size' => '64'));
+        // Section header title according to language file.
+        $mform->addElement('header', 'general', get_string('general', 'clipresume'));
+
+        // Add a text input for the name of the clipresume.
+        $mform->addElement('text', 'name', get_string('name', 'clipresume'), ['size' => '64']);
         $mform->setType('name', PARAM_TEXT);
         $mform->addRule('name', null, 'required', null, 'client');
-        $mform->addRule('name', get_string('maximumchars', '', 255), 'maxlength', 255, 'client');
-
-        // Campo para la descripción de la actividad.
-        $this->standard_intro_elements();
 
         // Añadir el encabezado "Clip Resume"
-        $mform->addElement('header', 'modulename', get_string('modulename', 'clipresume'));
+        $mform->addElement('header', 'clipresumeheader', get_string('modulename', 'clipresume'));
 
         // Campos de selección para la programación del cron
         $minutes = array_merge(array('*' => get_string('all', 'clipresume')), array_combine(range(0, 59), range(0, 59)));
@@ -83,7 +103,7 @@ class mod_clipresume_mod_form extends moodleform_mod {
         // File manager para credenciales
         $options = array(
             'accepted_types' => array('.json'),
-            'maxfiles' => 1, 
+            'maxfiles' => 1,
             'subdirs' => 0
         );
         $mform->addElement('filemanager', 'credentials', get_string('credentials', 'clipresume'), null, $options);
@@ -110,10 +130,198 @@ class mod_clipresume_mod_form extends moodleform_mod {
         $mform->setType('zoom_user_id', PARAM_TEXT);
         $mform->addHelpButton('zoom_user_id', 'zoom_user_id_help', 'clipresume');
 
-        // Elementos estándar de configuración de Moodle.
+        // Standard Moodle course module elements (course, category, etc.).
         $this->standard_coursemodule_elements();
+        $this->standard_intro_elements();
 
-        // Botones de guardar y cancelar.
+        // Standard Moodle form buttons.
         $this->add_action_buttons();
     }
+
+    function validation($data, $files)
+    {
+        $errors = array();
+
+        // Validate the 'name' field.
+        if (empty($data['name'])) {
+            $errors['name'] = get_string('errornoname', 'clipresume');
+        }
+        if (empty($data['credentials'])) {
+            $errors['credentials'] = get_string('required');
+        }
+        if (empty($data['drive_folder_id'])) {
+            $errors['drive_folder_id'] = get_string('required');
+        }
+        if (empty($data['zoom_client_id'])) {
+            $errors['zoom_client_id'] = get_string('required');
+        }
+        if (empty($data['zoom_client_secret'])) {
+            $errors['zoom_client_secret'] = get_string('required');
+        }
+        if (empty($data['zoom_account_id'])) {
+            $errors['zoom_account_id'] = get_string('required');
+        }
+        if (empty($data['zoom_user_id'])) {
+            $errors['zoom_user_id'] = get_string('required');
+        }
+
+        return $errors;
+    }
+
+    public function data_preprocessing(&$default_values)
+    {
+        global $CFG, $DB;
+        $context = context_system::instance();
+        $fs = get_file_storage();
+        // Precargar valores guardados en un archivo JSON de configuración si existe
+        $config_path = $CFG->dataroot . '/clipresume_configurations.json';
+        if (file_exists($config_path)) {
+            $config_data = json_decode(file_get_contents($config_path), true);
+            if ($config_data) {
+                // Cargar valores generales
+                $default_values['drive_folder_id'] = $config_data['drive_folder_id'] ?? '';
+                $default_values['zoom_client_id'] = $config_data['zoom_client_id'] ?? '';
+                $default_values['zoom_client_secret'] = $config_data['zoom_client_secret'] ?? '';
+                $default_values['zoom_account_id'] = $config_data['zoom_account_id'] ?? '';
+                $default_values['zoom_user_id'] = $config_data['zoom_user_id'] ?? '';
+
+                // Configuración de ejecución en cron
+                $course_id = $this->current->course;
+                if (isset($config_data['courses'])) {
+                    foreach ($config_data['courses'] as $course) {
+                        if ($course['course_id'] == $course_id) {
+                            $default_values['minute'] = $course['execution_parameters']['minute'] ?? '*';
+                            $default_values['hour'] = $course['execution_parameters']['hour'] ?? '*';
+                            $default_values['day'] = $course['execution_parameters']['day'] ?? '*';
+                            $default_values['month'] = $course['execution_parameters']['month'] ?? '*';
+                            $default_values['dayofweek'] = $course['execution_parameters']['dayofweek'] ?? '*';
+                            $default_values['enable_dates'] = $course['execution_parameters']['enable_dates'] ?? 0;
+                            $default_values['start_date'] = !empty($course['execution_parameters']['start_date']) ? strtotime($course['execution_parameters']['start_date']) : null;
+                            $default_values['end_date'] = !empty($course['execution_parameters']['end_date']) ? strtotime($course['execution_parameters']['end_date']) : null;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Manejo de archivos JSON de credenciales si ya existen en el área de archivos
+        $files = $fs->get_area_files($context->id, 'mod_clipresume', 'credentials', 0, 'id', false);
+        if ($files) {
+            $file = reset($files);
+            if ($file) {
+                $draftitemid = file_get_submitted_draft_itemid('credentials');
+                file_prepare_draft_area($draftitemid, $context->id, 'mod_clipresume', 'credentials', 0, array('subdirs' => 0, 'maxfiles' => 1));
+                $default_values['credentials'] = $draftitemid;
+            }
+        }
+    }
+
+    public function data_postprocessing($data)
+    {
+        global $CFG, $USER, $DB;
+        $fs = get_file_storage();
+
+        // Guardar configuraciones generales en configurations.json
+        $config_path = $CFG->dataroot . '/clipresume_configurations.json';
+        $config_data = array(
+            'drive_folder_id' => $data->drive_folder_id,
+            'zoom_client_id' => $data->zoom_client_id,
+            'zoom_client_secret' => $data->zoom_client_secret,
+            'zoom_account_id' => $data->zoom_account_id,
+            'zoom_user_id' => $data->zoom_user_id
+        );
+      //  file_put_contents($config_path, json_encode($config_data, JSON_PRETTY_PRINT));
+
+        // Guardar archivo de credenciales en credentials.json
+        $draftitemid = $data->credentials;
+        if ($draftitemid) {
+            $context = context_system::instance();
+            file_save_draft_area_files($draftitemid, $context->id, 'mod_clipresume', 'credentials', 0, array('subdirs' => 0, 'maxfiles' => 1));
+
+            $storedfiles = $fs->get_area_files($context->id, 'mod_clipresume', 'credentials', 0, 'id', false);
+            if ($storedfiles) {
+                $storedfile = reset($storedfiles);
+                $credentials_path = $CFG->dataroot . '/clipresume_credentials.json';
+                $storedfile->copy_content_to($credentials_path);
+            }
+        }
+
+        // Formatear fechas
+        $start_date = !empty($data->start_date) ? date('Y-m-d', $data->start_date) : null;
+        $end_date = !empty($data->end_date) ? date('Y-m-d', $data->end_date) : null;
+        if ($data->enable_dates == 0) {
+            $start_date = null;
+            $end_date = null;
+        }
+
+        // Actualizar o añadir las configuraciones del curso actual
+        $course_id = $this->current->course;
+
+        // Obtener información del curso
+        $course = $DB->get_record('course', array('id' => $course_id), 'fullname, shortname');
+
+
+        $course_name = isset($course->fullname) ? $course->fullname : '';
+        $course_short_name = isset($course->shortname) ? $course->shortname : '';
+
+        $execution_parameters = array(
+            'minute' => $data->minute,
+            'hour' => $data->hour,
+            'day' => $data->day,
+            'month' => $data->month,
+            'dayofweek' => $data->dayofweek,
+            'enable_dates' => $data->enable_dates,
+            'start_date' => $start_date,
+            'end_date' => $end_date
+        );
+
+        // Buscar el índice del curso en el array
+        $course_index = null;
+        if (isset($config_data['courses'])) {
+            foreach ($config_data['courses'] as $index => $course) {
+                if ($course['course_id'] == $course_id) {
+                    $course_index = $index;
+                    break;
+                }
+            }
+        }
+
+        // Si el curso ya existe, actualizarlo, si no, añadirlo
+        if ($course_index !== null) {
+            $config_data['courses'][$course_index]['execution_parameters'] = $execution_parameters;
+            $config_data['courses'][$course_index]['course_name'] = html_entity_decode($course_name);
+            $config_data['courses'][$course_index]['course_short_name'] = html_entity_decode($course_short_name);
+        } else {
+            $config_data['courses'][] = array(
+                'course_id' => $course_id,
+                'course_name' => html_entity_decode($course_name),
+                'course_short_name' => html_entity_decode($course_short_name),
+                'execution_parameters' => $execution_parameters
+            );
+        }
+        file_put_contents($config_path, json_encode($config_data, JSON_PRETTY_PRINT));
+    }
+
+
+
+    // function definition_after_data()
+    // {
+    //     $mform = $this->_form;
+    //     $data = $this->get_data();
+
+    //     // Disable the 'name' field if 'usecode' is set to 1.
+    //     if ($data && !empty($data->usecode)) {
+    //         $mform->disabledIf('name', 'usecode', 'eq', 1);
+    //     }
+
+    // }
+
+    // function preprocess_data($data)
+    // {
+    //     // Modify the 'name' data before saving.
+    //     $data->name = strtoupper($data->name);
+
+    //     return $data;
+    // }
 }

@@ -15,59 +15,101 @@ class process_video_task extends \core\task\scheduled_task
     {
         global $DB, $CFG;
 
-        //INICIO Google Drive
-        //$credentials_path = $CFG->dirroot . '\local\clipresume\path_to_google_credentials.json';
+        // //INICIO Google Drive
+        // //$credentials_path = $CFG->dirroot . '\local\clipresume\path_to_google_credentials.json';
+        // $credentials_path = $CFG->dataroot . '/clipresume_credentials.json';
+        // $config_path = $CFG->dataroot . '/clipresume_configurations.json';
 
+        // // Obtén el archivo JSON desde el área de configuración.
+        // $fs = get_file_storage();
+        // $context = \context_system::instance();
+        // $files = $fs->get_area_files($context->id, 'mod_clipresume', 'credentials_path', 0, 'itemid, filepath, filename', false);
 
-        // Obtén el archivo JSON desde el área de configuración.
-        $fs = get_file_storage();
-        $context = \context_system::instance();
-        $files = $fs->get_area_files($context->id, 'mod_clipresume', 'credentials_path', 0, 'itemid, filepath, filename', false);
+        // // Verifica si el archivo existe.
+        // if (count($files) > 0) {
+        //     // Obtiene el primer archivo (asumiendo que solo hay un archivo JSON subido).
+        //     $file = reset($files);
+        //     $jsoncontent = $file->get_content();
+        //     $credentials_path = json_decode($jsoncontent, true);
 
-        // Verifica si el archivo existe.
-        if (count($files) > 0) {
-            // Obtiene el primer archivo (asumiendo que solo hay un archivo JSON subido).
-            $file = reset($files);
-            $jsoncontent = $file->get_content();
-            $credentials_path = json_decode($jsoncontent, true);
+        //     if (!$credentials_path) {
+        //         echo "Error al leer el contenido del archivo JSON.";
+        //     }
+        // } else {
+        //     echo "No se encontró el archivo JSON de credenciales.";
+        // }
 
-            if (!$credentials_path) {
-                echo "Error al leer el contenido del archivo JSON.";
-            }
-        } else {
-            echo "No se encontró el archivo JSON de credenciales.";
-        }
+        // // $credentials_path = get_config('mod_clipresume', 'credentials_path');
+        // $folder_id = get_config('mod_clipresume', 'drive_folder_id');
+        // $client_id = get_config('mod_clipresume', 'zoom_client_id');
+        // $client_secret = get_config('mod_clipresume', 'zoom_client_secret');
+        // $account_id = get_config('mod_clipresume', 'zoom_account_id');
+        // $user_id = get_config('mod_clipresume', 'zoom_user_id');
 
-        // $credentials_path = get_config('mod_clipresume', 'credentials_path');
-        $folder_id = get_config('mod_clipresume', 'drive_folder_id');
-        $client_id = get_config('mod_clipresume', 'zoom_client_id');
-        $client_secret = get_config('mod_clipresume', 'zoom_client_secret');
-        $account_id = get_config('mod_clipresume', 'zoom_account_id');
-        $user_id = get_config('mod_clipresume', 'zoom_user_id');
-
-        // // Leer credenciales
+        // // // Leer credenciales
+        // // $leer_credenciales = function ($credentials_path) {
+        // //     mtrace("Leyendo credenciales...");
+        // //     $credentials = json_decode(file_get_contents($credentials_path), true);
+        // //     if (!$credentials) {
+        // //         mtrace("Error al leer las credenciales desde $credentials_path");
+        // //         return false;
+        // //     }
+        // //     mtrace("Credenciales leídas correctamente.");
+        // //     return $credentials;
+        // // };
         // $leer_credenciales = function ($credentials_path) {
         //     mtrace("Leyendo credenciales...");
-        //     $credentials = json_decode(file_get_contents($credentials_path), true);
-        //     if (!$credentials) {
-        //         mtrace("Error al leer las credenciales desde $credentials_path");
+        //     if (!$credentials_path) {
+        //         mtrace("Error al leer las credenciales.");
         //         return false;
         //     }
         //     mtrace("Credenciales leídas correctamente.");
-        //     return $credentials;
+        //     return $credentials_path;
         // };
-        $leer_credenciales = function ($credentials_path) {
-            mtrace("Leyendo credenciales...");
-            if (!$credentials_path) {
-                mtrace("Error al leer las credenciales.");
+
+
+        // $credentials = $leer_credenciales($credentials_path);
+
+        // Rutas de los archivos JSON
+        $credentials_path = $CFG->dataroot . '\clipresume_credentials.json';
+        $config_path = $CFG->dataroot . '\clipresume_configurations.json';
+
+        // Función para leer JSON
+        function leer_json($path)
+        {
+            if (!file_exists($path)) {
+                echo "No se encontró el archivo JSON en: $path";
                 return false;
             }
-            mtrace("Credenciales leídas correctamente.");
-            return $credentials_path;
-        };
+            $content = file_get_contents($path);
+            $data = json_decode($content, true);
+            if (!$data) {
+                echo "Error al leer el contenido del archivo JSON en: $path";
+                return false;
+            }
+            return $data;
+        }
 
+        // Leer los datos de credentials.json
+        $config_data = leer_json($config_path);
+        if ($config_data) {
+            $folder_id = $config_data['drive_folder_id'] ?? null;
+            $client_id = $config_data['zoom_client_id'] ?? null;
+            $client_secret = $config_data['zoom_client_secret'] ?? null;
+            $account_id = $config_data['zoom_account_id'] ?? null;
+            $user_id = $config_data['zoom_user_id'] ?? null;
+        }
 
-        $credentials = $leer_credenciales($credentials_path);
+        // Leer los datos de configuration.json
+        $credentials = leer_json($credentials_path);
+
+        // Validar y mostrar los datos cargados
+        if ($credentials && $config_data) {
+            mtrace("Credenciales y configuración leídas correctamente.");
+        } else {
+            mtrace("Error al leer las credenciales o la configuración.");
+        }
+
         // Obtener token de acceso
         $obtener_token_acceso = function ($credentials) {
             mtrace("Generando y obteniendo token de acceso...");
@@ -176,7 +218,7 @@ class process_video_task extends \core\task\scheduled_task
             mtrace($client_id . " - " . $client_secret . " - " . $account_id);
             // Cierra cURL
             curl_close($ch);
-           
+
             // Procesa la respuesta
             if ($http_code === 200) {
                 $response_data = json_decode($response, true);
@@ -224,6 +266,7 @@ class process_video_task extends \core\task\scheduled_task
             } else {
                 $meetings = json_decode($result, true);
                 $latest_meeting = end($meetings['meetings']);
+                // $latest_meeting = reset($meetings['meetings']);
                 $meeting_id = $latest_meeting['id'];
                 mtrace($meetings);
                 mtrace($latest_meeting);
@@ -272,7 +315,6 @@ class process_video_task extends \core\task\scheduled_task
                     // $download_url = $file['download_url'];
                     // $links['videos'][] = $download_url;
                     $links['videos'][] = $file;
-                    mtrace($download_url);
                 } elseif ($file['file_type'] === 'TRANSCRIPT') {
                     $download_url = $file['download_url'];
                     $links['transcripts'][] = $download_url;
@@ -285,7 +327,7 @@ class process_video_task extends \core\task\scheduled_task
 
         $download_links = $getDownloadLinks($recordings);
 
-        
+
         // $getMeetingIdsFromYesterday = function ($access_token, $user_id) {
         //     $from = date('Y-m-d', strtotime('yesterday'));
         //     $to = date('Y-m-d', strtotime('yesterday'));

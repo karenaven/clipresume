@@ -1,8 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" ?>
-<XMLDB PATH="mod/clipresume/db" VERSION="20240505" COMMENT="XMLDB file for Moodle mod_clipresume"
-    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-    xsi:noNamespaceSchemaLocation="../../../lib/xmldb/xmldb.xsd"
->
+<XMLDB PATH="mod/clipresume/db" VERSION="2024092500" COMMENT="XMLDB file for Moodle mod_clipresume">
   <TABLES>
     <TABLE NAME="clipresume" COMMENT="Stores the clipresume activity module instances.">
       <FIELDS>

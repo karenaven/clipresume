@@ -2,106 +2,164 @@
 defined('MOODLE_INTERNAL') || die();
 
 /**
- * Agrega una nueva instancia de la actividad clipresume en la base de datos.
+ * Devuelve las características que soporta el módulo.
  *
- * @param stdClass $clipresume Objeto que contiene los datos de la actividad.
- * @param mod_clipresume_mod_form $mform Formulario de creación de la actividad.
- * @return int ID de la nueva instancia de clipresume.
+ * @param string $feature Característica solicitada.
+ * @return mixed True si la característica es soportada, null si no.
  */
-function mod_clipresume_add_instance($clipresume, $mform = null) {
-    global $DB;
-
-    $clipresume->timecreated = time();
-    $clipresume->timemodified = time();
-
-    return $DB->insert_record('clipresume', $clipresume);
-}
-
-/**
- * Actualiza una instancia existente de la actividad clipresume.
- *
- * @param stdClass $clipresume Objeto que contiene los datos de la actividad.
- * @param mod_clipresume_mod_form $mform Formulario de actualización de la actividad.
- * @return bool True si la actualización fue exitosa, false en caso contrario.
- */
-function mod_clipresume_update_instance($clipresume, $mform = null) {
-    global $DB;
-
-    $clipresume->timemodified = time();
-    $clipresume->id = $clipresume->instance;
-
-    return $DB->update_record('clipresume', $clipresume);
-}
-
-/**
- * Elimina una instancia de la actividad clipresume y su configuración asociada.
- *
- * @param int $id ID de la instancia a eliminar.
- * @return bool True si la eliminación fue exitosa, false en caso contrario.
- */
-function mod_clipresume_delete_instance($id) {
-    global $DB;
-
-    if (!$clipresume = $DB->get_record('clipresume', array('id' => $id))) {
-        return false;
-    }
-
-    return $DB->delete_records('clipresume', array('id' => $clipresume->id));
-}
-
-/**
- * Define las características de la actividad.
- *
- * @param string $feature Característica a consultar.
- * @return mixed True si se admite la característica, null en caso contrario.
- */
-function mod_clipresume_supports($feature) {
-    switch($feature) {
-        case FEATURE_MOD_ARCHETYPE:
-            return MOD_ARCHETYPE_RESOURCE;
-        case FEATURE_BACKUP_MOODLE2:
+function clipresume_supports($feature)
+{
+    switch ($feature) {
+        case FEATURE_SHOW_DESCRIPTION:
             return true;
-        case FEATURE_MOD_INTRO:
-            return true; // Indica que esta actividad tiene una introducción.
-        case FEATURE_GRADE_HAS_GRADE:
-            return false; // Ajustar según si la actividad requiere calificaciones.
         default:
             return null;
     }
 }
 
 /**
- * Proporciona información de la instancia para mostrar en el informe del curso.
+ * Guarda una nueva instancia del módulo.
  *
- * @param cm_info $cm Información del módulo del curso.
- * @return cached_cm_info Objeto de información de caché del módulo del curso.
+ * @param stdClass $clipresume Objeto con los datos del módulo.
+ * @param clipresume_mod_form $mform Formulario del módulo.
+ * @return int ID de la nueva instancia.
  */
-function mod_clipresume_get_coursemodule_info($cm) {
+function clipresume_add_instance($data, $mform = null) {
     global $DB;
+    
+    $data->timecreated = time();
+    $data->id = $DB->insert_record('clipresume', $data);
 
-    if (!$clipresume = $DB->get_record('clipresume', array('id' => $cm->instance))) {
-        return null;
+    // Guardar configuración adicional en JSON
+    save_configuration_json($data);
+
+    return $data->id;
+}
+
+function clipresume_update_instance($data, $mform = null) {
+    global $DB;
+    
+    $data->timemodified = time();
+    $data->id = $data->instance;
+    $data->intro = isset($data->intro) ? $data->intro : '';
+    $data->introformat = isset($data->introformat) ? $data->introformat : FORMAT_HTML;
+    $result= $DB->update_record('clipresume', $data);
+
+    // Guardar configuración adicional en JSON
+    save_configuration_json($data);
+
+    return $result;
+}
+
+function save_configuration_json($data) {
+    global $CFG;
+
+    $config_path = $CFG->dataroot . '/clipresume_configurations.json';
+    $config_data = array(
+        'drive_folder_id' => $data->drive_folder_id,
+        'zoom_client_id' => $data->zoom_client_id,
+        'zoom_client_secret' => $data->zoom_client_secret,
+        'zoom_account_id' => $data->zoom_account_id,
+        'zoom_user_id' => $data->zoom_user_id
+    );
+
+    file_put_contents($config_path, json_encode($config_data, JSON_PRETTY_PRINT));
+}
+
+
+/**
+ * Elimina una instancia del módulo.
+ *
+ * @param int $id ID de la instancia del módulo.
+ * @return bool True si la eliminación fue exitosa.
+ */
+function clipresume_delete_instance($id)
+{
+    global $DB, $CFG;
+
+    if (!$clipresume = $DB->get_record('clipresume', array('id' => $id))) {
+        return false;
     }
 
-    $info = new cached_cm_info();
-    $info->name = $clipresume->name;
+    $result = $DB->delete_records('clipresume', array('id' => $id));
+    if ($result) {
+        // Eliminar las configuraciones del curso del archivo JSON
+        $config_path = $CFG->dataroot . '/clipresume_configurations.json';
 
-    // Si la introducción está definida, la formatea para mostrarla.
-    if (!empty($clipresume->intro)) {
-        $info->content = format_module_intro('clipresume', $clipresume, $cm->id, true);
+        if (file_exists($config_path)) {
+            $config_data = json_decode(file_get_contents($config_path), true);
+            if ($config_data && isset($config_data['courses'])) {
+                foreach ($config_data['courses'] as $index => $course) {
+                    if ($course['course_id'] == $clipresume->course) {
+                        unset($config_data['courses'][$index]);
+                        break;
+                    }
+                }
+                // Reindexar el array para eliminar posibles huecos
+                $config_data['courses'] = array_values($config_data['courses']);
+                // Guardar los cambios en el archivo JSON
+                file_put_contents($config_path, json_encode($config_data, JSON_PRETTY_PRINT));
+            }
+        }
     }
-
-    return $info;
+    return $result;
 }
 
 /**
- * Devuelve el contenido del nombre de la actividad para usarlo en el informe del curso.
+ * Devuelve la información del módulo del curso.
  *
- * @param stdClass $course Curso en el que se encuentran las actividades.
  * @param cm_info $cm Información del módulo del curso.
- * @param stdClass $context Contexto del curso o actividad.
- * @return array Arreglo con los nombres de las columnas.
+ * @return cached_cm_info Información en caché del módulo del curso.
  */
-function mod_clipresume_get_coursemodule_name() {
-    return get_string('pluginname', 'clipresume');
-}
+// function mod_clipresume_get_coursemodule_info($cm)
+// {
+//     global $DB;
+
+//     $info = new cached_cm_info();
+//     $clipresume = $DB->get_record('clipresume', array('id' => $cm->instance), '*', MUST_EXIST);
+
+//     $info->name = $clipresume->name;
+
+//     if (!empty($clipresume->intro)) {
+//         $info->content = format_module_intro('clipresume', $clipresume, $cm->id, true);
+//     }
+
+//     return $info;
+// }
+
+/**
+ * Maneja la entrega de archivos del módulo.
+ *
+ * @param stdClass $course Objeto del curso.
+ * @param stdClass $cm Objeto del módulo del curso.
+ * @param stdClass $context Contexto del módulo.
+ * @param string $filearea Área de archivos.
+ * @param array $args Argumentos adicionales.
+ * @param bool $forcedownload Si se debe forzar la descarga.
+ * @param array $options Opciones adicionales.
+ * @return bool Devuelve falso si no hay archivos que servir.
+ */
+// function mod_clipresume_pluginfile($course, $cm, $context, $filearea, $args, $forcedownload, $options = array())
+// {
+//     if ($context->contextlevel != CONTEXT_MODULE) {
+//         return false;
+//     }
+
+//     // Controla las áreas de archivos válidas
+//     if ($filearea !== 'content') {
+//         return false;
+//     }
+
+//     $itemid = array_shift($args);
+//     $filename = array_pop($args);
+//     $filepath = $args ? '/' . implode('/', $args) . '/' : '/';
+
+//     $fs = get_file_storage();
+//     $file = $fs->get_file($context->id, 'clipresume', $filearea, $itemid, $filepath, $filename);
+
+//     if (!$file || $file->is_directory()) {
+//         return false;
+//     }
+
+//     send_stored_file($file, null, 0, $forcedownload, $options);
+// }

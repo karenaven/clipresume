@@ -1,39 +1,45 @@
 <?php
-require_once('../../config.php');
-require_once('lib.php');
+// This file is part of Moodle - http://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
-// Parámetros
-$id = required_param('id', PARAM_INT); // ID del módulo de curso
+/**
+ * Activity view page for the mod_clipresume plugin.
+ *
+ * @package   mod_clipresume
+ * @copyright Year, You Name <your@email.address>
+ * @license   http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ */
 
-// Obtener información del módulo y del curso
-$cm = get_coursemodule_from_id('clipresume', $id, 0, false, MUST_EXIST);
-$course = $DB->get_record('course', ['id' => $cm->course], '*', MUST_EXIST);
-$clipresume = $DB->get_record('clipresume', ['id' => $cm->instance], '*', MUST_EXIST); // Información específica de la actividad
+require('../../config.php');
 
-$context = context_module::instance($cm->id); // Contexto de la actividad
+$id = required_param('id', PARAM_INT);
+[$course, $cm] = get_course_and_cm_from_cmid($id, 'clipresume');
+$instance = $DB->get_record('clipresume', ['id' => $cm->instance], '*', MUST_EXIST);
 
-// Verificar que el usuario esté logueado y tenga permiso para ver la actividad
-require_login($course, true, $cm);
-require_capability('mod/clipresume:view', $context);
-
-// Configuración de la página
-$PAGE->set_url('/mod/clipresume/view.php', ['id' => $id]);
-$PAGE->set_title($course->shortname . ': ' . $clipresume->name);
-$PAGE->set_heading($course->fullname);
+// Especifica el contexto de la página y la URL
+$context = context_module::instance($cm->id);
 $PAGE->set_context($context);
+$PAGE->set_url('/mod/clipresume/view.php', ['id' => $id]);
 
-// Iniciar el renderizado de la página
+// Verifica que el usuario esté logueado en el curso y con el módulo adecuado
+require_login($course, true, $cm);
+
+$PAGE->set_title(format_string($instance->name));
+$PAGE->set_heading(format_string($course->fullname));
+
+// Renderiza el contenido de la página
 echo $OUTPUT->header();
-
-// Mostrar el nombre de la actividad
-echo $OUTPUT->heading(format_string($clipresume->name), 2);
-
-// Mostrar la descripción de la actividad
-if (trim($clipresume->intro)) {
-    echo $OUTPUT->box(format_module_intro('clipresume', $clipresume, $cm->id), 'generalbox mod_introbox', 'clipresumeintro');
-}
-
-// Aquí puedes añadir cualquier lógica o visualización adicional que necesite tu módulo
-
-// Finalizar el renderizado de la página
+echo $OUTPUT->heading(format_string($instance->name));
 echo $OUTPUT->footer();
