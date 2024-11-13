@@ -308,6 +308,7 @@ class process_video_task extends \core\task\scheduled_task
             $links = [
                 'videos' => [],
                 'transcripts' => [],
+                'audio' => [],
             ];
 
             foreach ($recordings['recording_files'] as $file) {
@@ -316,9 +317,13 @@ class process_video_task extends \core\task\scheduled_task
                     // $links['videos'][] = $download_url;
                     $links['videos'][] = $file;
                 } elseif ($file['file_type'] === 'TRANSCRIPT') {
-                    $download_url = $file['download_url'];
-                    $links['transcripts'][] = $download_url;
-                    mtrace($download_url);
+                    //$download_url = $file['download_url'];
+                    $links['transcripts'][] = $file;
+                    //mtrace($download_url);
+                } elseif ($file['file_type'] === 'M4A') {
+                    //$download_url = $file['download_url'];
+                    $links['audio'][] = $file;
+                    //mtrace($download_url);
                 }
             }
             mtrace($links);
@@ -530,10 +535,17 @@ class process_video_task extends \core\task\scheduled_task
                 return null;
             }
 
-            return json_decode($response, true);
+            $file_info = json_decode($response, true);
+            if (isset($file_info['id'])) {
+                mtrace("Archivo subido exitosamente. ID de archivo: " . $file_info['id']);
+                return $file_info['id'];
+            } else {
+                mtrace("Error al obtener el ID del archivo.");
+                return null;
+            }
         }
 
-        function uploadToDrive($file_url, $zoom_access_token, $drive_access_token, $file_name, $folder_id, $file_type)
+        function uploadToDrive($file_url, $zoom_access_token, $drive_access_token, $file_name, $folder_id, $file_type, $meeting_id, $recording_id)
         {
             // Descargar el archivo desde Zoom
             $file_data = downloadFile($file_url, $zoom_access_token);
@@ -541,8 +553,15 @@ class process_video_task extends \core\task\scheduled_task
                 return null; // Salir si hubo un error en la descarga
             }
 
-            // Subir el archivo a la carpeta ya creada
-            return uploadFileToDrive($file_data, $file_name, $file_type, $drive_access_token, $folder_id);
+            // Subir el archivo a la carpeta ya creada y obtener su ID
+            $file_id = uploadFileToDrive($file_data, $file_name, $file_type, $drive_access_token, $folder_id);
+
+            // Eliminar el archivo de Zoom después de subirlo a Google Drive
+            if ($file_id) {
+                deleteFileFromZoom($meeting_id, $recording_id, $zoom_access_token);
+            }
+
+            return $file_id;
         }
 
         // Crear la carpeta una vez antes de subir los archivos
@@ -552,12 +571,41 @@ class process_video_task extends \core\task\scheduled_task
             exit; // Salir si hubo un error al crear la carpeta
         }
 
+        // Nueva función para eliminar archivos de Zoom
+        function deleteFileFromZoom($meeting_id, $recording_id, $zoom_access_token)
+{
+            $url = "https://api.zoom.us/v2/meetings/$meeting_id/recordings/$recording_id";
+
+            mtrace("Eliminando archivo de Zoom con URL: $url");
+            mtrace("meeting id: $meeting_id");
+            mtrace("recording id: $recording_id");
+
+            $ch = curl_init($url);
+            curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "DELETE");
+            curl_setopt($ch, CURLOPT_HTTPHEADER, [
+                "Authorization: Bearer $zoom_access_token"
+            ]);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            $response = curl_exec($ch);
+            $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            curl_close($ch);
+
+            if ($http_code === 204) {
+                mtrace("Archivo eliminado exitosamente de Zoom.");
+                return true;
+            } else {
+                mtrace("Error al eliminar el archivo de Zoom. Código de respuesta: $http_code");
+                return false;
+            }
+        }
+
         // Ciclo para subir videos
         $links = $download_links;
 
         $index_clip = 0;
         foreach ($links['videos'] as $index => $video) {
             $download_url = $video['download_url'];
+            $recording_id = $video['id'];
             $file_name = 'Video_' . $index . '.mp4';
             if (isset($video['encryption_fingerprint'])) {
                 $index_clip++;
@@ -566,16 +614,23 @@ class process_video_task extends \core\task\scheduled_task
                 $index++;
                 $file_name = 'Video Completo_' . $index . ' - ' . $video['recording_start'] . '.mp4';
             }
-            uploadToDrive($download_url, $access_token_zoom, $access_token_drive, $file_name, $folder_id, "video/mp4");
+            uploadToDrive($download_url, $access_token_zoom, $access_token_drive, $file_name, $folder_id, "video/mp4", $meeting_id, $recording_id);
         }
 
         // Ciclo para subir transcripciones
         foreach ($links['transcripts'] as $index => $transcript_url) {
             $index++;
+            $download_url = $transcript_url['download_url'];
+            $recording_id = $transcript_url['id'];
             mtrace("Subiendo Transcripciones a Google Drive...");
             $file_name = "Transcript_" . $index . ".vtt";
-            uploadToDrive($transcript_url, $access_token_zoom, $access_token_drive, $file_name, $folder_id, "text/vtt");
+            uploadToDrive($download_url, $access_token_zoom, $access_token_drive, $file_name, $folder_id, "text/vtt", $meeting_id, $recording_id);
         }
 
+        // Eliminar audios de Zoom
+        foreach ($links['audio'] as $index => $audio) {
+            $audio_id = $audio['id'];
+            deleteFileFromZoom($meeting_id, $audio_id, $access_token_zoom);
+        }
     }
 }
