@@ -221,31 +221,22 @@ class mod_clipresume_mod_form extends moodleform_mod
     {
         global $CFG, $USER, $DB;
         $fs = get_file_storage();
-
-        // Guardar configuraciones generales en configurations.json
+       
+        // Ruta del archivo de configuración
         $config_path = $CFG->dataroot . '/clipresume_configurations.json';
-        $config_data = array(
-            'drive_folder_id' => $data->drive_folder_id,
-            'zoom_client_id' => $data->zoom_client_id,
-            'zoom_client_secret' => $data->zoom_client_secret,
-            'zoom_account_id' => $data->zoom_account_id,
-            'zoom_user_id' => $data->zoom_user_id
-        );
-      //  file_put_contents($config_path, json_encode($config_data, JSON_PRETTY_PRINT));
 
-        // Guardar archivo de credenciales en credentials.json
-        $draftitemid = $data->credentials;
-        if ($draftitemid) {
-            $context = context_system::instance();
-            file_save_draft_area_files($draftitemid, $context->id, 'mod_clipresume', 'credentials', 0, array('subdirs' => 0, 'maxfiles' => 1));
-
-            $storedfiles = $fs->get_area_files($context->id, 'mod_clipresume', 'credentials', 0, 'id', false);
-            if ($storedfiles) {
-                $storedfile = reset($storedfiles);
-                $credentials_path = $CFG->dataroot . '/clipresume_credentials.json';
-                $storedfile->copy_content_to($credentials_path);
-            }
+        // Cargar datos existentes del archivo de configuración
+        $config_data = array();
+        if (file_exists($config_path)) {
+            $config_data = json_decode(file_get_contents($config_path), true);
         }
+
+        // Actualizar configuraciones generales
+        $config_data['drive_folder_id'] = $data->drive_folder_id;
+        $config_data['zoom_client_id'] = $data->zoom_client_id;
+        $config_data['zoom_client_secret'] = $data->zoom_client_secret;
+        $config_data['zoom_account_id'] = $data->zoom_account_id;
+        $config_data['zoom_user_id'] = $data->zoom_user_id;
 
         // Formatear fechas
         $start_date = !empty($data->start_date) ? date('Y-m-d', $data->start_date) : null;
@@ -261,7 +252,6 @@ class mod_clipresume_mod_form extends moodleform_mod
         // Obtener información del curso
         $course = $DB->get_record('course', array('id' => $course_id), 'fullname, shortname');
 
-
         $course_name = isset($course->fullname) ? $course->fullname : '';
         $course_short_name = isset($course->shortname) ? $course->shortname : '';
 
@@ -276,6 +266,11 @@ class mod_clipresume_mod_form extends moodleform_mod
             'end_date' => $end_date
         );
 
+        // Inicializar el array de cursos si no existe
+        if (!isset($config_data['courses'])) {
+            $config_data['courses'] = array();
+        }
+
         // Buscar el índice del curso en el array
         $course_index = null;
         if (isset($config_data['courses'])) {
@@ -286,7 +281,6 @@ class mod_clipresume_mod_form extends moodleform_mod
                 }
             }
         }
-
         // Si el curso ya existe, actualizarlo, si no, añadirlo
         if ($course_index !== null) {
             $config_data['courses'][$course_index]['execution_parameters'] = $execution_parameters;
@@ -301,27 +295,19 @@ class mod_clipresume_mod_form extends moodleform_mod
             );
         }
         file_put_contents($config_path, json_encode($config_data, JSON_PRETTY_PRINT));
+       
+        // Guardar archivo de credenciales en credentials.json
+        $draftitemid = $data->credentials;
+        if ($draftitemid) {
+            $context = context_system::instance();
+            file_save_draft_area_files($draftitemid, $context->id, 'mod_clipresume', 'credentials', 0, array('subdirs' => 0, 'maxfiles' => 1));
+
+            $storedfiles = $fs->get_area_files($context->id, 'mod_clipresume', 'credentials', 0, 'id', false);
+            if ($storedfiles) {
+                $storedfile = reset($storedfiles);
+                $credentials_path = $CFG->dataroot . '/clipresume_credentials.json';
+                $storedfile->copy_content_to($credentials_path);
+            }
+        }
     }
-
-
-
-    // function definition_after_data()
-    // {
-    //     $mform = $this->_form;
-    //     $data = $this->get_data();
-
-    //     // Disable the 'name' field if 'usecode' is set to 1.
-    //     if ($data && !empty($data->usecode)) {
-    //         $mform->disabledIf('name', 'usecode', 'eq', 1);
-    //     }
-
-    // }
-
-    // function preprocess_data($data)
-    // {
-    //     // Modify the 'name' data before saving.
-    //     $data->name = strtoupper($data->name);
-
-    //     return $data;
-    // }
 }

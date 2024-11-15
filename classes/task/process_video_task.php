@@ -2,10 +2,10 @@
 namespace mod_clipresume\task;
 
 defined('MOODLE_INTERNAL') || die();
+ini_set('memory_limit', '3G');
 
 class process_video_task extends \core\task\scheduled_task
 {
-
     public function get_name()
     {
         return get_string('process_video_task', 'clipresume');
@@ -15,61 +15,8 @@ class process_video_task extends \core\task\scheduled_task
     {
         global $DB, $CFG;
 
-        // //INICIO Google Drive
-        // //$credentials_path = $CFG->dirroot . '\local\clipresume\path_to_google_credentials.json';
-        // $credentials_path = $CFG->dataroot . '/clipresume_credentials.json';
-        // $config_path = $CFG->dataroot . '/clipresume_configurations.json';
-
-        // // Obtén el archivo JSON desde el área de configuración.
-        // $fs = get_file_storage();
-        // $context = \context_system::instance();
-        // $files = $fs->get_area_files($context->id, 'mod_clipresume', 'credentials_path', 0, 'itemid, filepath, filename', false);
-
-        // // Verifica si el archivo existe.
-        // if (count($files) > 0) {
-        //     // Obtiene el primer archivo (asumiendo que solo hay un archivo JSON subido).
-        //     $file = reset($files);
-        //     $jsoncontent = $file->get_content();
-        //     $credentials_path = json_decode($jsoncontent, true);
-
-        //     if (!$credentials_path) {
-        //         echo "Error al leer el contenido del archivo JSON.";
-        //     }
-        // } else {
-        //     echo "No se encontró el archivo JSON de credenciales.";
-        // }
-
-        // // $credentials_path = get_config('mod_clipresume', 'credentials_path');
-        // $folder_id = get_config('mod_clipresume', 'drive_folder_id');
-        // $client_id = get_config('mod_clipresume', 'zoom_client_id');
-        // $client_secret = get_config('mod_clipresume', 'zoom_client_secret');
-        // $account_id = get_config('mod_clipresume', 'zoom_account_id');
-        // $user_id = get_config('mod_clipresume', 'zoom_user_id');
-
-        // // // Leer credenciales
-        // // $leer_credenciales = function ($credentials_path) {
-        // //     mtrace("Leyendo credenciales...");
-        // //     $credentials = json_decode(file_get_contents($credentials_path), true);
-        // //     if (!$credentials) {
-        // //         mtrace("Error al leer las credenciales desde $credentials_path");
-        // //         return false;
-        // //     }
-        // //     mtrace("Credenciales leídas correctamente.");
-        // //     return $credentials;
-        // // };
-        // $leer_credenciales = function ($credentials_path) {
-        //     mtrace("Leyendo credenciales...");
-        //     if (!$credentials_path) {
-        //         mtrace("Error al leer las credenciales.");
-        //         return false;
-        //     }
-        //     mtrace("Credenciales leídas correctamente.");
-        //     return $credentials_path;
-        // };
-
-
-        // $credentials = $leer_credenciales($credentials_path);
-
+        mtrace("----------------------------------------------------------------------------------------------------------");
+        mtrace("Iniciando el proceso...");
         // Rutas de los archivos JSON
         $credentials_path = $CFG->dataroot . '\clipresume_credentials.json';
         $config_path = $CFG->dataroot . '\clipresume_configurations.json';
@@ -176,7 +123,7 @@ class process_video_task extends \core\task\scheduled_task
 
             $response_data = json_decode($response, true);
             if (isset($response_data['access_token'])) {
-                mtrace("Token de acceso obtenido correctamente.");
+                mtrace("Token de acceso de Google Drive obtenido correctamente.");
                 return $response_data['access_token'];
             } else {
                 mtrace("Error al obtener el token de acceso: " . json_encode($response_data));
@@ -189,8 +136,6 @@ class process_video_task extends \core\task\scheduled_task
         //INICIO Zoom
         $getAccessTokenZoom = function ($client_id, $client_secret, $account_id) {
             $token_url = "https://zoom.us/oauth/token";
-
-            mtrace($client_id . " - " . $client_secret . " - " . $account_id);
 
             $headers = [
                 'Authorization: Basic ' . base64_encode($client_id . ':' . $client_secret)
@@ -215,7 +160,6 @@ class process_video_task extends \core\task\scheduled_task
             $response = curl_exec($ch);
             $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
 
-            mtrace($client_id . " - " . $client_secret . " - " . $account_id);
             // Cierra cURL
             curl_close($ch);
 
@@ -229,23 +173,16 @@ class process_video_task extends \core\task\scheduled_task
             }
         };
 
-        // $client_id = 'b1qA5cHGSsGaE01BPfBztA';
-        // $client_secret = 'R433ORUTjUew4FmFwuCbz3SqTMxntt3G';
-        // $account_id = 'oQySkN8RTiClQmI4rbaoFA';
-
         $access_token_zoom = $getAccessTokenZoom($client_id, $client_secret, $account_id);
         if ($access_token_zoom) {
-            mtrace("Access Token Zoom: $access_token_zoom");
+            mtrace("Access Token Zoom obtenido correctamente.");
         } else {
             mtrace("Error al obtener el token de acceso.");
         }
 
         $getLastMeetingId = function ($access_token, $user_id) {
             $from = '2024-10-15';
-            $to = '2024-10-29';
-            // $from = date('Y-m-d', strtotime('yesterday'));
-            // $to = date('Y-m-d');
-            // $user_id = 'softwareclipresume@gmail.com';
+            $to = date('Y-m-d');
             $url = "https://api.zoom.us/v2/users/$user_id/recordings?from=" . urlencode($from) . "&to=" . urlencode($to);
 
             mtrace("Obteniendo ID de la última reunión...");
@@ -259,21 +196,14 @@ class process_video_task extends \core\task\scheduled_task
             $meeting_id = 0;
             $context = stream_context_create($options);
             $result = file_get_contents($url, false, $context);
-            mtrace($result);
 
             if ($result === FALSE) {
                 mtrace("ERROR " . $result);
             } else {
                 $meetings = json_decode($result, true);
-                $latest_meeting = end($meetings['meetings']);
-                // $latest_meeting = reset($meetings['meetings']);
+                $latest_meeting = reset($meetings['meetings']);
                 $meeting_id = $latest_meeting['id'];
-                mtrace($meetings);
-                mtrace($latest_meeting);
-                mtrace($meeting_id);
             }
-            //mtrace($meeting_id);
-
             return $meeting_id;
         };
 
@@ -291,13 +221,12 @@ class process_video_task extends \core\task\scheduled_task
 
             $context = stream_context_create($options);
             $result = file_get_contents($url, false, $context);
-            mtrace($result);
+
             if ($result === FALSE) { /* Manejar error */
                 mtrace('ERROR obteniendo meeting ' . $result);
             }
 
             $recordings = json_decode($result, true);
-            mtrace($recordings);
 
             return $recordings;
         };
@@ -309,136 +238,28 @@ class process_video_task extends \core\task\scheduled_task
                 'videos' => [],
                 'transcripts' => [],
                 'audio' => [],
+                'chat' => []
             ];
 
             foreach ($recordings['recording_files'] as $file) {
                 if ($file['file_type'] === 'MP4') {
-                    // $download_url = $file['download_url'];
-                    // $links['videos'][] = $download_url;
                     $links['videos'][] = $file;
                 } elseif ($file['file_type'] === 'TRANSCRIPT') {
-                    //$download_url = $file['download_url'];
                     $links['transcripts'][] = $file;
-                    //mtrace($download_url);
                 } elseif ($file['file_type'] === 'M4A') {
-                    //$download_url = $file['download_url'];
                     $links['audio'][] = $file;
-                    //mtrace($download_url);
+                } elseif ($file['file_type'] === 'CHAT') {
+                    $links['chat'][] = $file;
                 }
             }
-            mtrace($links);
             return $links;
         };
 
         $download_links = $getDownloadLinks($recordings);
 
-
-        // $getMeetingIdsFromYesterday = function ($access_token, $user_id) {
-        //     $from = date('Y-m-d', strtotime('yesterday'));
-        //     $to = date('Y-m-d', strtotime('yesterday'));
-
-        //     $url = "https://api.zoom.us/v2/users/$user_id/recordings?from=" . urlencode($from) . "&to=" . urlencode($to);
-
-        //     mtrace("Obteniendo IDs de reuniones del día anterior...");
-
-        //     $options = array(
-        //         'http' => array(
-        //             'header' => "Authorization: Bearer $access_token\r\n",
-        //             'method' => 'GET',
-        //         ),
-        //     );
-        //     $meeting_ids = [];
-        //     $context = stream_context_create($options);
-        //     $result = file_get_contents($url, false, $context);
-
-        //     if ($result === FALSE) {
-        //         mtrace("ERROR " . $result);
-        //     } else {
-        //         $meetings = json_decode($result, true);
-
-        //         if (!empty($meetings['meetings'])) {
-        //             foreach ($meetings['meetings'] as $meeting) {
-        //                 $meeting_ids[] = $meeting['id'];
-        //             }
-        //         }
-
-        //         mtrace("Reuniones encontradas: " . json_encode($meeting_ids));
-        //     }
-
-        //     return $meeting_ids;
-        // };
-
-        // $meeting_ids = $getMeetingIdsFromYesterday($access_token_zoom, $user_id);
-
-        // $getMeetingsByIds = function ($access_token, $meeting_ids) {
-        //     $all_recordings = [];
-
-        //     foreach ($meeting_ids as $meeting_id) {
-        //         $url = "https://api.zoom.us/v2/meetings/$meeting_id/recordings";
-
-        //         $options = array(
-        //             'http' => array(
-        //                 'header' => "Authorization: Bearer $access_token\r\n",
-        //                 'method' => 'GET',
-        //             ),
-        //         );
-
-        //         $context = stream_context_create($options);
-        //         $result = file_get_contents($url, false, $context);
-        //         mtrace("Obteniendo grabaciones para la reunión ID: $meeting_id");
-
-        //         if ($result === FALSE) {
-        //             mtrace('ERROR obteniendo grabaciones para la reunión ID ' . $meeting_id);
-        //             continue;
-        //         }
-
-        //         $recordings = json_decode($result, true);
-        //         if (!empty($recordings)) {
-        //             $all_recordings[$meeting_id] = $recordings;
-        //         }
-        //     }
-
-        //     return $all_recordings;
-        // };
-
-        // $recordings = $getMeetingsByIds($access_token_zoom, $meeting_ids);
-
-        // $getDownloadLinks = function ($all_recordings) {
-        //     $all_links = [
-        //         'videos' => [],
-        //         'transcripts' => [],
-        //     ];
-
-        //     foreach ($all_recordings as $meeting_id => $recordings) {
-        //         mtrace("Procesando grabaciones para la reunión ID: $meeting_id");
-
-        //         foreach ($recordings['recording_files'] as $file) {
-        //             if ($file['file_type'] === 'MP4') {
-        //                 $all_links['videos'][] = [
-        //                     'meeting_id' => $meeting_id,
-        //                     'file' => $file,
-        //                 ];
-        //                 mtrace("Video encontrado para reunión $meeting_id");
-        //             } elseif ($file['file_type'] === 'TRANSCRIPT') {
-        //                 $all_links['transcripts'][] = [
-        //                     'meeting_id' => $meeting_id,
-        //                     'download_url' => $file['download_url'],
-        //                 ];
-        //                 mtrace("Transcripción encontrada para reunión $meeting_id");
-        //             }
-        //         }
-        //     }
-
-        //     mtrace("Enlaces procesados: " . json_encode($all_links));
-        //     return $all_links;
-        // };
-
-        // $download_links = $getDownloadLinks($recordings);
-
         function downloadFile($file_url, $zoom_access_token)
         {
             mtrace("Descargando archivo desde Zoom...");
-            mtrace("URL: $file_url");
 
             // Usa cURL para descargar el archivo desde Zoom con autenticación
             $ch = curl_init($file_url);
@@ -459,6 +280,7 @@ class process_video_task extends \core\task\scheduled_task
             return $file_data;
         }
 
+        //INICIO Drive
         function createFolder($drive_access_token, $folder_id)
         {
             mtrace("Creando carpeta en Google Drive...");
@@ -561,6 +383,7 @@ class process_video_task extends \core\task\scheduled_task
                 deleteFileFromZoom($meeting_id, $recording_id, $zoom_access_token);
             }
 
+
             return $file_id;
         }
 
@@ -568,17 +391,15 @@ class process_video_task extends \core\task\scheduled_task
         $folder_id = createFolder($access_token_drive, $folder_id);
         if ($folder_id === false) {
             mtrace("No se pudo crear la carpeta. Terminando.");
-            exit; // Salir si hubo un error al crear la carpeta
+            exit;
         }
 
         // Nueva función para eliminar archivos de Zoom
         function deleteFileFromZoom($meeting_id, $recording_id, $zoom_access_token)
-{
+        {
             $url = "https://api.zoom.us/v2/meetings/$meeting_id/recordings/$recording_id";
 
             mtrace("Eliminando archivo de Zoom con URL: $url");
-            mtrace("meeting id: $meeting_id");
-            mtrace("recording id: $recording_id");
 
             $ch = curl_init($url);
             curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "DELETE");
@@ -632,5 +453,14 @@ class process_video_task extends \core\task\scheduled_task
             $audio_id = $audio['id'];
             deleteFileFromZoom($meeting_id, $audio_id, $access_token_zoom);
         }
+
+        // Eliminar chats de Zoom
+        foreach ($links['chat'] as $index => $chat) {
+            $chat_id = $chat['id'];
+            deleteFileFromZoom($meeting_id, $chat_id, $access_token_zoom);
+        }
+
+        mtrace("----------------------------------------------------------------------------------------------------------");
+        mtrace("Fin del proceso...");
     }
 }

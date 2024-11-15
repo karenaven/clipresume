@@ -29,10 +29,6 @@ function clipresume_add_instance($data, $mform = null) {
     
     $data->timecreated = time();
     $data->id = $DB->insert_record('clipresume', $data);
-
-    // Guardar configuración adicional en JSON
-    save_configuration_json($data);
-
     return $data->id;
 }
 
@@ -44,28 +40,8 @@ function clipresume_update_instance($data, $mform = null) {
     $data->intro = isset($data->intro) ? $data->intro : '';
     $data->introformat = isset($data->introformat) ? $data->introformat : FORMAT_HTML;
     $result= $DB->update_record('clipresume', $data);
-
-    // Guardar configuración adicional en JSON
-    save_configuration_json($data);
-
     return $result;
 }
-
-function save_configuration_json($data) {
-    global $CFG;
-
-    $config_path = $CFG->dataroot . '/clipresume_configurations.json';
-    $config_data = array(
-        'drive_folder_id' => $data->drive_folder_id,
-        'zoom_client_id' => $data->zoom_client_id,
-        'zoom_client_secret' => $data->zoom_client_secret,
-        'zoom_account_id' => $data->zoom_account_id,
-        'zoom_user_id' => $data->zoom_user_id
-    );
-
-    file_put_contents($config_path, json_encode($config_data, JSON_PRETTY_PRINT));
-}
-
 
 /**
  * Elimina una instancia del módulo.
@@ -104,62 +80,3 @@ function clipresume_delete_instance($id)
     }
     return $result;
 }
-
-/**
- * Devuelve la información del módulo del curso.
- *
- * @param cm_info $cm Información del módulo del curso.
- * @return cached_cm_info Información en caché del módulo del curso.
- */
-// function mod_clipresume_get_coursemodule_info($cm)
-// {
-//     global $DB;
-
-//     $info = new cached_cm_info();
-//     $clipresume = $DB->get_record('clipresume', array('id' => $cm->instance), '*', MUST_EXIST);
-
-//     $info->name = $clipresume->name;
-
-//     if (!empty($clipresume->intro)) {
-//         $info->content = format_module_intro('clipresume', $clipresume, $cm->id, true);
-//     }
-
-//     return $info;
-// }
-
-/**
- * Maneja la entrega de archivos del módulo.
- *
- * @param stdClass $course Objeto del curso.
- * @param stdClass $cm Objeto del módulo del curso.
- * @param stdClass $context Contexto del módulo.
- * @param string $filearea Área de archivos.
- * @param array $args Argumentos adicionales.
- * @param bool $forcedownload Si se debe forzar la descarga.
- * @param array $options Opciones adicionales.
- * @return bool Devuelve falso si no hay archivos que servir.
- */
-// function mod_clipresume_pluginfile($course, $cm, $context, $filearea, $args, $forcedownload, $options = array())
-// {
-//     if ($context->contextlevel != CONTEXT_MODULE) {
-//         return false;
-//     }
-
-//     // Controla las áreas de archivos válidas
-//     if ($filearea !== 'content') {
-//         return false;
-//     }
-
-//     $itemid = array_shift($args);
-//     $filename = array_pop($args);
-//     $filepath = $args ? '/' . implode('/', $args) . '/' : '/';
-
-//     $fs = get_file_storage();
-//     $file = $fs->get_file($context->id, 'clipresume', $filearea, $itemid, $filepath, $filename);
-
-//     if (!$file || $file->is_directory()) {
-//         return false;
-//     }
-
-//     send_stored_file($file, null, 0, $forcedownload, $options);
-// }
