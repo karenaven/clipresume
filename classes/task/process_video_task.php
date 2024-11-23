@@ -1,6 +1,8 @@
 <?php
 namespace mod_clipresume\task;
 
+use DateTime;
+
 defined('MOODLE_INTERNAL') || die();
 ini_set('memory_limit', '3G');
 
@@ -37,6 +39,35 @@ class process_video_task extends \core\task\scheduled_task
             return $data;
         }
 
+        // Obtener los cursos a procesar
+        function obtener_cursos_a_procesar($courses)
+        {
+            $current_time = new DateTime();
+
+            $cursos_a_procesar = [];
+
+            foreach ($courses as $course_config) {
+                $course_id = $course_config['course_id'];
+                $params = $course_config['operating_hours'];
+                $operating_hour_from = $params['operating_hour_from'];
+                $operating_minute_from = $params['operating_minute_from'];
+                $operating_hour_to = $params['operating_hour_to'];
+                $operating_minute_to = $params['operating_minute_to'];
+
+                $start_time = new DateTime();
+                $start_time->setTime($operating_hour_from, $operating_minute_from);
+
+                $end_time = new DateTime();
+                $end_time->setTime($operating_hour_to, $operating_minute_to);
+
+                if ($current_time >= $start_time && $current_time <= $end_time) {
+                    $cursos_a_procesar[] = $course_id;
+                }
+            }
+
+            return $cursos_a_procesar;
+        }
+
         // Leer los datos de credentials.json
         $config_data = leer_json($config_path);
         if ($config_data) {
@@ -44,17 +75,35 @@ class process_video_task extends \core\task\scheduled_task
             $client_id = $config_data['zoom_client_id'] ?? null;
             $client_secret = $config_data['zoom_client_secret'] ?? null;
             $account_id = $config_data['zoom_account_id'] ?? null;
-            $user_id = $config_data['zoom_user_id'] ?? null;
+            $user_zoom_id = $config_data['zoom_user_id'] ?? null;
+            $courses = $config_data['courses'] ?? null;
+            $user_moodle_id = $config_data['user_creator_id'] ?? null;
+            $from = $config_data['date_from'] ?? null;
+            $to = $config_data['date_to'] ?? null;
         }
 
         // Leer los datos de configuration.json
         $credentials = leer_json($credentials_path);
-
         // Validar y mostrar los datos cargados
         if ($credentials && $config_data) {
             mtrace("Credenciales y configuración leídas correctamente.");
         } else {
             mtrace("Error al leer las credenciales o la configuración.");
+        }
+
+        $courses_ids = obtener_cursos_a_procesar($courses);
+        if (empty($courses_ids)) {
+            mtrace("No hay cursos a procesar según las condiciones establecidas.");
+            mtrace("----------------------------------------------------------------------------------------------------------");
+            mtrace("Fin del proceso...");
+            return;
+        }
+
+        if (!is_array($courses_ids)) {
+            mtrace("Error: cursos_a_procesar no es un array.");
+            mtrace("----------------------------------------------------------------------------------------------------------");
+            mtrace("Fin del proceso...");
+            return;
         }
 
         // Obtener token de acceso
@@ -180,10 +229,8 @@ class process_video_task extends \core\task\scheduled_task
             mtrace("Error al obtener el token de acceso.");
         }
 
-        $getLastMeetingId = function ($access_token, $user_id) {
-            $from = '2024-10-15';
-            $to = date('Y-m-d');
-            $url = "https://api.zoom.us/v2/users/$user_id/recordings?from=" . urlencode($from) . "&to=" . urlencode($to);
+        $getLastMeetingId = function ($access_token, $user_zoom_id, $from, $to) {
+            $url = "https://api.zoom.us/v2/users/$user_zoom_id/recordings?from=" . urlencode($from) . "&to=" . urlencode($to);
 
             mtrace("Obteniendo ID de la última reunión...");
 
@@ -201,13 +248,13 @@ class process_video_task extends \core\task\scheduled_task
                 mtrace("ERROR " . $result);
             } else {
                 $meetings = json_decode($result, true);
-                $latest_meeting = reset($meetings['meetings']);
+                $latest_meeting = end($meetings['meetings']);
                 $meeting_id = $latest_meeting['id'];
             }
             return $meeting_id;
         };
 
-        $meeting_id = $getLastMeetingId($access_token_zoom, $user_id);
+        $meeting_id = $getLastMeetingId($access_token_zoom, $user_zoom_id, $from, $to);
 
         $getMeetingById = function ($access_token, $meeting_id) {
             $url = "https://api.zoom.us/v2/meetings/$meeting_id/recordings";
@@ -281,12 +328,41 @@ class process_video_task extends \core\task\scheduled_task
         }
 
         //INICIO Drive
+        function getFoldersInParent($drive_access_token, $parent_folder_id)
+        {
+            $ch = curl_init('https://www.googleapis.com/drive/v3/files?q=' . urlencode("'$parent_folder_id' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false"));
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_HTTPHEADER, [
+                'Authorization: Bearer ' . $drive_access_token
+            ]);
+            $response = curl_exec($ch);
+            $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            curl_close($ch);
+
+            if ($http_code !== 200) {
+                mtrace("Error al obtener las carpetas. Código de respuesta: $http_code");
+                return [];
+            }
+
+            $folders = json_decode($response, true);
+            return $folders['files'];
+        }
+
         function createFolder($drive_access_token, $folder_id)
         {
+            $folders = getFoldersInParent($drive_access_token, $folder_id);
             mtrace("Creando carpeta en Google Drive...");
 
             // Crear una carpeta con la fecha actual como nombre
             $folder_name = date('Y-m-d');
+
+            foreach ($folders as $folder) {
+                if ($folder['name'] === $folder_name) {
+                    // La carpeta ya existe, retornar el ID de la carpeta existente
+                    return $folder['id'];
+                }
+            }
+
             $folder_metadata = [
                 'name' => $folder_name,
                 'mimeType' => 'application/vnd.google-apps.folder',
@@ -367,8 +443,18 @@ class process_video_task extends \core\task\scheduled_task
             }
         }
 
-        function uploadToDrive($file_url, $zoom_access_token, $drive_access_token, $file_name, $folder_id, $file_type, $meeting_id, $recording_id)
-        {
+        function uploadToDrive(
+            $file_url,
+            $zoom_access_token,
+            $drive_access_token,
+            $file_name,
+            $folder_id,
+            $file_type,
+            $meeting_id,
+            $recording_id,
+            $user_moodle_id,
+            $courses_ids
+        ) {
             // Descargar el archivo desde Zoom
             $file_data = downloadFile($file_url, $zoom_access_token);
             if ($file_data === null) {
@@ -381,10 +467,47 @@ class process_video_task extends \core\task\scheduled_task
             // Eliminar el archivo de Zoom después de subirlo a Google Drive
             if ($file_id) {
                 deleteFileFromZoom($meeting_id, $recording_id, $zoom_access_token);
+
+                foreach ($courses_ids as $course_id) {
+                    //SUBIR LINK AL BOARD
+                    if (str_starts_with($file_name, 'Clip_') || str_starts_with($file_name, 'Video Completo_')) {
+                        uploadToBoard($course_id, $user_moodle_id, $file_name, "https://drive.google.com/file/d/$file_id/view?usp=sharing");
+                    }
+                }
             }
 
-
             return $file_id;
+        }
+
+
+        function uploadToBoard($course_id, $user_moodle_id, $file_name, $link_drive)
+        {
+            global $DB;
+
+            //Obtener BoardId
+            $sql = "SELECT * FROM mdl_board WHERE course = $course_id";
+            $result = $DB->get_record_sql($sql);
+            $board_id = $result->id;
+
+            //Obtener ColumnId
+            $column_id = null;
+            if (str_starts_with($file_name, 'Clip_')) {
+                $sql = "SELECT * FROM mdl_board_columns WHERE name = 'Videos Cortos' AND boardid = :board_id";
+                $result = $DB->get_record_sql($sql, ['board_id' => $board_id]);
+                $column_id = $result->id;
+            } else if (str_starts_with($file_name, 'Video Completo_')) {
+                $sql = "SELECT * FROM mdl_board_columns WHERE name = 'Videos Largos' AND boardid = :board_id";
+                $result = $DB->get_record_sql($sql, ['board_id' => $board_id]);
+                $column_id = $result->id;
+            }
+
+            //Insertar Link de Drive
+            if ($column_id) {
+                $sql = "INSERT INTO mdl_board_notes (columnid, userid, content, timecreated) VALUES (:column_id, :user_id, :link_drive, NOW())";
+                $result = $DB->execute($sql, ['column_id' => $column_id, 'user_id' => $user_moodle_id, 'link_drive' => $link_drive]);
+                return $result;
+            }
+            return false;
         }
 
         // Crear la carpeta una vez antes de subir los archivos
@@ -435,7 +558,7 @@ class process_video_task extends \core\task\scheduled_task
                 $index++;
                 $file_name = 'Video Completo_' . $index . ' - ' . $video['recording_start'] . '.mp4';
             }
-            uploadToDrive($download_url, $access_token_zoom, $access_token_drive, $file_name, $folder_id, "video/mp4", $meeting_id, $recording_id);
+            uploadToDrive($download_url, $access_token_zoom, $access_token_drive, $file_name, $folder_id, "video/mp4", $meeting_id, $recording_id, $user_moodle_id, $courses_ids);
         }
 
         // Ciclo para subir transcripciones
@@ -443,9 +566,8 @@ class process_video_task extends \core\task\scheduled_task
             $index++;
             $download_url = $transcript_url['download_url'];
             $recording_id = $transcript_url['id'];
-            mtrace("Subiendo Transcripciones a Google Drive...");
             $file_name = "Transcript_" . $index . ".vtt";
-            uploadToDrive($download_url, $access_token_zoom, $access_token_drive, $file_name, $folder_id, "text/vtt", $meeting_id, $recording_id);
+            uploadToDrive($download_url, $access_token_zoom, $access_token_drive, $file_name, $folder_id, "text/vtt", $meeting_id, $recording_id, $user_moodle_id, $courses_ids);
         }
 
         // Eliminar audios de Zoom

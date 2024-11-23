@@ -43,7 +43,8 @@ class mod_clipresume_mod_form extends moodleform_mod
         $mform->addRule('name', null, 'required', null, 'client');
 
         // Añadir el encabezado "Clip Resume"
-        $mform->addElement('header', 'clipresumeheader', get_string('modulename', 'clipresume'));
+        $mform->addElement('header', 'clipresumeheader', get_string('credentials', 'clipresume'));
+
 
         // Campos de selección para la programación del cron
         $minutes = array_merge(array('*' => get_string('all', 'clipresume')), array_combine(range(0, 59), range(0, 59)));
@@ -106,7 +107,7 @@ class mod_clipresume_mod_form extends moodleform_mod
             'maxfiles' => 1,
             'subdirs' => 0
         );
-        $mform->addElement('filemanager', 'credentials', get_string('credentials', 'clipresume'), null, $options);
+        $mform->addElement('filemanager', 'credentials', get_string('credentials_path', 'clipresume'), null, $options);
         $mform->addHelpButton('credentials', 'credentials_help', 'clipresume');
 
         // Campos adicionales de configuración
@@ -129,6 +130,27 @@ class mod_clipresume_mod_form extends moodleform_mod
         $mform->addElement('text', 'zoom_user_id', get_string('zoom_user_id', 'clipresume'));
         $mform->setType('zoom_user_id', PARAM_TEXT);
         $mform->addHelpButton('zoom_user_id', 'zoom_user_id_help', 'clipresume');
+        
+        $mform->addElement('date_selector', 'date_from', get_string('date_from', 'clipresume'));
+        $mform->addElement('date_selector', 'date_to', get_string('date_to', 'clipresume'));
+
+        $mform->addElement('header', 'operatinghoursheader', get_string('operatinghours', 'clipresume'));
+
+        $minutes = array_combine(range(0, 59), range(0, 59));
+        $hours = array_combine(range(0, 23), range(0, 23));
+
+        $mform->addElement('select', 'operating_hour_from', get_string('hourfrom', 'clipresume'), $hours);
+        $mform->setDefault('operating_hour_from', '0');
+
+        $mform->addElement('select', 'operating_minute_from', get_string('minutefrom', 'clipresume'), $minutes);
+        $mform->setDefault('operating_minute_from', '0');
+
+        // Añadir el campo "Horario Operativo Hasta"
+        $mform->addElement('select', 'operating_hour_to', get_string('hourto', 'clipresume'), $hours);
+        $mform->setDefault('operating_hour_to', '23');
+
+        $mform->addElement('select', 'operating_minute_to', get_string('minuteto', 'clipresume'), $minutes);
+        $mform->setDefault('operating_minute_to', '59');
 
         // Standard Moodle course module elements (course, category, etc.).
         $this->standard_coursemodule_elements();
@@ -184,6 +206,8 @@ class mod_clipresume_mod_form extends moodleform_mod
                 $default_values['zoom_client_secret'] = $config_data['zoom_client_secret'] ?? '';
                 $default_values['zoom_account_id'] = $config_data['zoom_account_id'] ?? '';
                 $default_values['zoom_user_id'] = $config_data['zoom_user_id'] ?? '';
+                $default_values['date_from'] = !empty($config_data['date_from']) ? strtotime($config_data['date_from']) : null;
+                $default_values['date_to'] = !empty($config_data['date_to']) ? strtotime($config_data['date_to']) : null;
 
                 // Configuración de ejecución en cron
                 $course_id = $this->current->course;
@@ -198,6 +222,11 @@ class mod_clipresume_mod_form extends moodleform_mod
                             $default_values['enable_dates'] = $course['execution_parameters']['enable_dates'] ?? 0;
                             $default_values['start_date'] = !empty($course['execution_parameters']['start_date']) ? strtotime($course['execution_parameters']['start_date']) : null;
                             $default_values['end_date'] = !empty($course['execution_parameters']['end_date']) ? strtotime($course['execution_parameters']['end_date']) : null;
+
+                            $default_values['operating_hour_from'] = $course['operating_hours']['operating_hour_from'] ?? '*';
+                            $default_values['operating_minute_from'] = $course['operating_hours']['operating_minute_from'] ?? '*';
+                            $default_values['operating_hour_to'] = $course['operating_hours']['operating_hour_to'] ?? '*';
+                            $default_values['operating_minute_to'] = $course['operating_hours']['operating_minute_to'] ?? '*';
                             break;
                         }
                     }
@@ -221,7 +250,7 @@ class mod_clipresume_mod_form extends moodleform_mod
     {
         global $CFG, $USER, $DB;
         $fs = get_file_storage();
-       
+
         // Ruta del archivo de configuración
         $config_path = $CFG->dataroot . '/clipresume_configurations.json';
 
@@ -230,6 +259,7 @@ class mod_clipresume_mod_form extends moodleform_mod
         if (file_exists($config_path)) {
             $config_data = json_decode(file_get_contents($config_path), true);
         }
+        $user_id = $USER->id;
 
         // Actualizar configuraciones generales
         $config_data['drive_folder_id'] = $data->drive_folder_id;
@@ -237,6 +267,9 @@ class mod_clipresume_mod_form extends moodleform_mod
         $config_data['zoom_client_secret'] = $data->zoom_client_secret;
         $config_data['zoom_account_id'] = $data->zoom_account_id;
         $config_data['zoom_user_id'] = $data->zoom_user_id;
+        $config_data['date_from'] = !empty($data->date_from) ? date('Y-m-d', $data->date_from) : null;
+        $config_data['date_to'] = !empty($data->date_to) ? date('Y-m-d', $data->date_to) : null;
+        $config_data['user_creator_id'] = $user_id;
 
         // Formatear fechas
         $start_date = !empty($data->start_date) ? date('Y-m-d', $data->start_date) : null;
@@ -266,6 +299,13 @@ class mod_clipresume_mod_form extends moodleform_mod
             'end_date' => $end_date
         );
 
+        $operating_hours = array(
+            'operating_hour_from' => $data->operating_hour_from,
+            'operating_minute_from' => $data->operating_minute_from,
+            'operating_hour_to' => $data->operating_hour_to,
+            'operating_minute_to' => $data->operating_minute_to
+        );
+
         // Inicializar el array de cursos si no existe
         if (!isset($config_data['courses'])) {
             $config_data['courses'] = array();
@@ -286,16 +326,18 @@ class mod_clipresume_mod_form extends moodleform_mod
             $config_data['courses'][$course_index]['execution_parameters'] = $execution_parameters;
             $config_data['courses'][$course_index]['course_name'] = html_entity_decode($course_name);
             $config_data['courses'][$course_index]['course_short_name'] = html_entity_decode($course_short_name);
+            $config_data['courses'][$course_index]['operating_hours'] = $operating_hours;
         } else {
             $config_data['courses'][] = array(
                 'course_id' => $course_id,
                 'course_name' => html_entity_decode($course_name),
                 'course_short_name' => html_entity_decode($course_short_name),
-                'execution_parameters' => $execution_parameters
+                'execution_parameters' => $execution_parameters,
+                'operating_hours' => $operating_hours
             );
         }
         file_put_contents($config_path, json_encode($config_data, JSON_PRETTY_PRINT));
-       
+
         // Guardar archivo de credenciales en credentials.json
         $draftitemid = $data->credentials;
         if ($draftitemid) {
